@@ -16,6 +16,7 @@ const navItems = [
       { href: '/deals', label: 'Deals', icon: '📄' },
       { href: '/parties', label: 'Parties', icon: '🏢' },
       { href: '/payments', label: 'Payments', icon: '💰' },
+      { href: '/categories', label: 'Product Categories', icon: '📦' },
     ],
   },
   {

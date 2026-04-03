@@ -1,74 +1,91 @@
 import mongoose from 'mongoose'
 
+// Embedded product line schema
+const ProductLineSchema = new mongoose.Schema({
+  category:           { type: String, default: '' },
+  size:               { type: String, default: '' },
+  grade:              { type: String, default: '' },
+  quantity:           { type: Number, default: 0 },  // CBM
+
+  invoiceRatePerCBM:  { type: Number, default: 0 },  // rate on invoice document
+  totalRatePerCBM:    { type: Number, default: 0 },  // total rate charged to customer (invoice + top)
+  supplierRatePerCBM: { type: Number, default: 0 },  // what agent owes supplier per CBM
+
+  // Calculated fields (set by pre-save)
+  topRatePerCBM:      { type: Number, default: 0 },  // totalRatePerCBM - invoiceRatePerCBM
+  invoiceAmount:      { type: Number, default: 0 },  // invoiceRatePerCBM * quantity
+  topAmount:          { type: Number, default: 0 },  // topRatePerCBM * quantity
+  supplierTotal:      { type: Number, default: 0 },  // supplierRatePerCBM * quantity
+}, { _id: true })
+
 const DealSchema = new mongoose.Schema({
-  dealId: { type: String, required: true, unique: true },
-
-  // Parties
+  dealId:   { type: String, required: true, unique: true },
   supplier: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
-  buyer: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
-
-  // Product details
-  product: { type: String, required: true },
-  productCategory: { type: String, default: '' },
-  quantity: { type: Number, default: 0 },
-  unit: { type: String, default: 'CBM' },
-  qualitySpec: { type: String, default: '' }, // quality / spec / size
-
-  // Financials
-  invoiceAmount: { type: Number, required: true, default: 0 },
-  topAmount: { type: Number, default: 0 },     // cash/top component
-  commissionAmount: { type: Number, default: 0 }, // our commission
+  buyer:    { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
   currency: { type: String, default: 'USD' },
 
-  // Dates
-  shipmentDate: { type: Date },
-  acceptanceDate: { type: Date },
-  daTenor: { type: Number, default: 90 },       // days (e.g. 90, 120, 180)
-  dueDate: { type: Date },                       // auto-calc: acceptanceDate + daTenor
+  // Multi-product lines
+  products: [ProductLineSchema],
+
+  // Timeline
+  eta:         { type: Date },            // ETA of shipment = invoice 1st due date
+  freeDays:    { type: Number, default: 0 }, // free days at port; eta+freeDays = invoice last urgent due
+  topDueDate:  { type: Date },            // due date for top amount (manually set)
 
   // Status
   dealStatus: {
     type: String,
-    enum: ['Draft', 'Confirmed', 'Shipped', 'Accepted', 'Payment Due', 'Partially Paid', 'Completed', 'Overdue', 'Cancelled'],
+    enum: ['Draft', 'Confirmed', 'Shipped', 'BL Sent', 'Invoice Paid', 'Fully Paid', 'Had Claim', 'Cancelled'],
     default: 'Draft',
   },
-  paymentStatus: {
-    type: String,
-    enum: ['Not Started', 'Partial', 'Full', 'Overdue'],
-    default: 'Not Started',
-  },
 
-  // Computed payment fields (updated on each payment)
-  totalExpected: { type: Number, default: 0 },  // invoiceAmount + topAmount
-  totalReceived: { type: Number, default: 0 },  // sum of all received payments
-  buyerOutstanding: { type: Number, default: 0 }, // totalExpected - totalReceived
+  // Claim fields (when dealStatus = 'Had Claim')
+  supplierClaimShare: { type: Number, default: 0 }, // supplier bears this portion
+  myClaimShare:       { type: Number, default: 0 }, // agent bears this portion (loss)
+
+  // Computed totals from product lines
+  totalInvoiceAmount:  { type: Number, default: 0 },
+  totalTopAmount:      { type: Number, default: 0 },
+  totalSupplierAmount: { type: Number, default: 0 },
+  totalExpected:       { type: Number, default: 0 }, // totalInvoiceAmount + totalTopAmount
+
+  // Payment tracking (updated on each payment event)
+  totalReceived:      { type: Number, default: 0 },
+  invoiceReceived:    { type: Number, default: 0 },
+  topReceived:        { type: Number, default: 0 },
+  buyerOutstanding:   { type: Number, default: 0 },
+
+  // Commission tracking
+  grossCommission:    { type: Number, default: 0 }, // = totalTopAmount
+  netCommission:      { type: Number, default: 0 }, // grossCommission - myClaimShare
   commissionReceived: { type: Number, default: 0 },
-  commissionPending: { type: Number, default: 0 },
+  commissionPending:  { type: Number, default: 0 },
 
   notes: { type: String, default: '' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-}, {
-  timestamps: true,
-})
+}, { timestamps: true })
 
-// Before save: recalculate derived fields
+// Before save: recalculate all product line and deal-level totals
 DealSchema.pre('save', function (next) {
-  // Auto-calculate due date if acceptance date and tenor are set
-  if (this.acceptanceDate && this.daTenor) {
-    const d = new Date(this.acceptanceDate)
-    d.setDate(d.getDate() + this.daTenor)
-    this.dueDate = d
+  let totalInvoice = 0, totalTop = 0, totalSupplier = 0
+
+  for (const p of this.products || []) {
+    p.topRatePerCBM  = (p.totalRatePerCBM || 0) - (p.invoiceRatePerCBM || 0)
+    p.invoiceAmount  = (p.invoiceRatePerCBM || 0) * (p.quantity || 0)
+    p.topAmount      = p.topRatePerCBM * (p.quantity || 0)
+    p.supplierTotal  = (p.supplierRatePerCBM || 0) * (p.quantity || 0)
+    totalInvoice    += p.invoiceAmount
+    totalTop        += p.topAmount
+    totalSupplier   += p.supplierTotal
   }
 
-  // Total expected = invoice + top
-  this.totalExpected = (this.invoiceAmount || 0) + (this.topAmount || 0)
-
-  // Outstanding
-  this.buyerOutstanding = Math.max(0, this.totalExpected - (this.totalReceived || 0))
-
-  // Commission pending
-  this.commissionPending = Math.max(0, (this.commissionAmount || 0) - (this.commissionReceived || 0))
+  this.totalInvoiceAmount  = totalInvoice
+  this.totalTopAmount      = totalTop
+  this.totalSupplierAmount = totalSupplier
+  this.totalExpected       = totalInvoice + totalTop
+  this.grossCommission     = totalTop
+  this.netCommission       = totalTop - (this.myClaimShare || 0)
+  this.buyerOutstanding    = Math.max(0, this.totalExpected - (this.totalReceived || 0))
+  this.commissionPending   = Math.max(0, this.netCommission - (this.commissionReceived || 0))
 
   next()
 })
@@ -76,7 +93,7 @@ DealSchema.pre('save', function (next) {
 DealSchema.index({ buyer: 1 })
 DealSchema.index({ supplier: 1 })
 DealSchema.index({ dealStatus: 1 })
-DealSchema.index({ dueDate: 1 })
+DealSchema.index({ eta: 1 })
 DealSchema.index({ dealId: 1 })
 
 export default mongoose.models.Deal || mongoose.model('Deal', DealSchema)
