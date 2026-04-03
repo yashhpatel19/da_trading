@@ -12,42 +12,35 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const {
-      buyer, supplier, product, status, paymentStatus,
-      dateFrom, dateTo, dueDateFrom, dueDateTo,
-      overdue, search, page = 1, limit = 50,
+      buyer, supplier, status, etaFrom, etaTo, overdue,
+      search, page = 1, limit = 50,
     } = req.query
 
     const filter = {}
-
     if (buyer) filter.buyer = buyer
     if (supplier) filter.supplier = supplier
     if (status) filter.dealStatus = status
-    if (paymentStatus) filter.paymentStatus = paymentStatus
 
-    if (product) filter.product = { $regex: product, $options: 'i' }
     if (search) {
       filter.$or = [
         { dealId: { $regex: search, $options: 'i' } },
-        { product: { $regex: search, $options: 'i' } },
         { notes: { $regex: search, $options: 'i' } },
+        { 'products.category': { $regex: search, $options: 'i' } },
+        { 'products.grade': { $regex: search, $options: 'i' } },
       ]
     }
 
-    if (dateFrom || dateTo) {
-      filter.createdAt = {}
-      if (dateFrom) filter.createdAt.$gte = new Date(dateFrom)
-      if (dateTo) filter.createdAt.$lte = new Date(dateTo)
-    }
-
-    if (dueDateFrom || dueDateTo) {
-      filter.dueDate = {}
-      if (dueDateFrom) filter.dueDate.$gte = new Date(dueDateFrom)
-      if (dueDateTo) filter.dueDate.$lte = new Date(dueDateTo)
+    if (etaFrom || etaTo) {
+      filter.eta = {}
+      if (etaFrom) filter.eta.$gte = new Date(etaFrom)
+      if (etaTo) filter.eta.$lte = new Date(etaTo)
     }
 
     if (overdue === 'true') {
-      filter.dueDate = { $lt: new Date() }
-      filter.dealStatus = { $nin: ['Completed', 'Cancelled'] }
+      // Invoice overdue = past eta + freeDays
+      // We filter roughly by eta < today and status not closed
+      filter.eta = { $lt: new Date() }
+      filter.dealStatus = { $nin: ['Fully Paid', 'Had Claim', 'Cancelled'] }
     }
 
     const skip = (Number(page) - 1) * Number(limit)
@@ -67,26 +60,14 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const data = req.body
+    if (!data.dealId) data.dealId = generateDealId()
 
-    // Auto-generate deal ID if not provided
-    if (!data.dealId) {
-      data.dealId = generateDealId()
-    }
+    // Ensure products is an array
+    if (!Array.isArray(data.products)) data.products = []
 
-    // Calculate due date
-    if (data.acceptanceDate && data.daTenor) {
-      const d = new Date(data.acceptanceDate)
-      d.setDate(d.getDate() + Number(data.daTenor))
-      data.dueDate = d
-    }
-
-    // Set totalExpected
-    data.totalExpected = (Number(data.invoiceAmount) || 0) + (Number(data.topAmount) || 0)
-    data.buyerOutstanding = data.totalExpected
-    data.commissionPending = Number(data.commissionAmount) || 0
-
-    const deal = await Deal.create(data)
-    const populated = await deal.populate(['buyer', 'supplier'])
+    const deal = new Deal(data)
+    await deal.save()  // pre-save calculates all totals
+    const populated = await Deal.findById(deal._id).populate('buyer', 'name country').populate('supplier', 'name country')
     return res.status(201).json(populated)
   }
 

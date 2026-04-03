@@ -4,7 +4,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import Layout from '../../components/Layout'
 import { DealStatusBadge } from '../../components/DealStatusBadge'
-import { formatCurrency, fmtDate, daysFromToday } from '../../lib/utils'
+import { formatCurrency, fmtDate, isInvoiceOverdue, DEAL_STATUSES } from '../../lib/utils'
 
 export async function getServerSideProps(context) {
   const session = await getSession(context)
@@ -12,7 +12,7 @@ export async function getServerSideProps(context) {
   return { props: {} }
 }
 
-const STATUSES = ['', 'Draft', 'Confirmed', 'Shipped', 'Accepted', 'Payment Due', 'Partially Paid', 'Completed', 'Overdue', 'Cancelled']
+const STATUSES = ['', ...DEAL_STATUSES]
 
 export default function DealsPage() {
   const [deals, setDeals] = useState([])
@@ -104,11 +104,11 @@ export default function DealsPage() {
                 <th className="th">Deal ID</th>
                 <th className="th">Buyer</th>
                 <th className="th">Supplier</th>
-                <th className="th">Product</th>
-                <th className="th">Invoice Amt</th>
-                <th className="th">Commission</th>
+                <th className="th">Products</th>
+                <th className="th">Invoice</th>
+                <th className="th">Top / Commission</th>
                 <th className="th">Outstanding</th>
-                <th className="th">Due Date</th>
+                <th className="th">ETA / Due</th>
                 <th className="th">Status</th>
                 <th className="th">Actions</th>
               </tr>
@@ -118,15 +118,14 @@ export default function DealsPage() {
                 <tr><td colSpan={10} className="td text-center text-gray-500 py-8">Loading...</td></tr>
               )}
               {!loading && deals.length === 0 && (
-                <tr><td colSpan={10} className="td text-center text-gray-500 py-8">No deals found</td></tr>
+                <tr><td colSpan={10} className="td text-center text-gray-500 py-8">No deals found. <Link href="/deals/new" className="text-brand-blue hover:underline">Create one →</Link></td></tr>
               )}
               {deals.map(deal => {
-                const daysUntil = deal.dueDate ? -daysFromToday(deal.dueDate) : null
-                const isOverdue = daysUntil !== null && daysUntil < 0
-                const isDueSoon = daysUntil !== null && daysUntil >= 0 && daysUntil <= 7
+                const invoiceOD = isInvoiceOverdue(deal.eta, deal.freeDays)
+                const categories = [...new Set((deal.products || []).map(p => p.category).filter(Boolean))].join(', ')
 
                 return (
-                  <tr key={deal._id} className={`hover:bg-dark-hover/40 transition-colors ${isOverdue ? 'bg-red-950/10' : ''}`}>
+                  <tr key={deal._id} className={`hover:bg-dark-hover/40 transition-colors ${invoiceOD ? 'bg-red-950/10' : ''}`}>
                     <td className="td">
                       <Link href={`/deals/${deal._id}`} className="text-brand-blue hover:underline font-mono text-xs font-medium">
                         {deal.dealId}
@@ -140,33 +139,26 @@ export default function DealsPage() {
                       <div className="text-sm text-gray-200">{deal.supplier?.name || '—'}</div>
                       <div className="text-xs text-gray-500">{deal.supplier?.country || ''}</div>
                     </td>
-                    <td className="td">
-                      <div className="text-sm text-gray-200">{deal.product}</div>
-                      <div className="text-xs text-gray-500">{deal.productCategory}</div>
+                    <td className="td text-xs">
+                      <div className="text-gray-200">{categories || '—'}</div>
+                      <div className="text-gray-500">{(deal.products || []).length} line{deal.products?.length !== 1 ? 's' : ''}</div>
                     </td>
                     <td className="td font-mono text-xs">
-                      {formatCurrency(deal.invoiceAmount, deal.currency)}
-                      {deal.topAmount > 0 && (
-                        <div className="text-gray-500">+{formatCurrency(deal.topAmount, deal.currency)} top</div>
-                      )}
+                      {formatCurrency(deal.totalInvoiceAmount, deal.currency)}
                     </td>
-                    <td className="td font-mono text-xs text-purple-400">
-                      {formatCurrency(deal.commissionAmount, deal.currency)}
-                      {deal.commissionReceived > 0 && (
-                        <div className="text-gray-500">rcvd: {formatCurrency(deal.commissionReceived, deal.currency)}</div>
-                      )}
+                    <td className="td font-mono text-xs text-yellow-400">
+                      {formatCurrency(deal.totalTopAmount, deal.currency)}
+                      {deal.netCommission < 0 && <div className="text-red-400 text-xs">Loss deal</div>}
                     </td>
                     <td className={`td font-mono text-xs ${deal.buyerOutstanding > 0 ? 'text-yellow-400' : 'text-gray-500'}`}>
                       {formatCurrency(deal.buyerOutstanding, deal.currency)}
                     </td>
                     <td className="td text-xs">
-                      {deal.dueDate ? (
+                      {deal.eta ? (
                         <div>
-                          <div className={isOverdue ? 'text-red-400' : isDueSoon ? 'text-yellow-400' : 'text-gray-300'}>
-                            {fmtDate(deal.dueDate)}
-                          </div>
-                          {isOverdue && <div className="text-red-500 text-xs">{Math.abs(daysUntil)}d overdue</div>}
-                          {isDueSoon && !isOverdue && <div className="text-yellow-500 text-xs">in {daysUntil}d</div>}
+                          <div className={invoiceOD ? 'text-red-400' : 'text-gray-300'}>{fmtDate(deal.eta)}</div>
+                          {invoiceOD && <div className="text-red-500">INV OVERDUE</div>}
+                          {deal.freeDays > 0 && !invoiceOD && <div className="text-gray-500">+{deal.freeDays}d free</div>}
                         </div>
                       ) : '—'}
                     </td>
