@@ -90,13 +90,23 @@ export default function DealForm({ initialData = {}, mode = 'create' }) {
     setSaving(true)
     setError('')
     try {
+      // Only send editable fields — strip _id, __v, computed totals, timestamps
       const payload = {
-        ...form,
-        freeDays: Number(form.freeDays) || 0,
+        dealId:             form.dealId,
+        supplier:           form.supplier,
+        buyer:              form.buyer,
+        currency:           form.currency,
+        dealStatus:         form.dealStatus,
+        notes:              form.notes,
+        eta:                form.eta || null,
+        freeDays:           Number(form.freeDays) || 0,
+        topDueDate:         form.topDueDate || null,
         supplierClaimShare: Number(form.supplierClaimShare) || 0,
-        myClaimShare: Number(form.myClaimShare) || 0,
+        myClaimShare:       Number(form.myClaimShare) || 0,
         products: products.map(l => ({
-          ...l,
+          category:           l.category,
+          size:               l.size,
+          grade:              l.grade,
           quantity:           Number(l.quantity) || 0,
           invoiceRatePerCBM:  Number(l.invoiceRatePerCBM) || 0,
           totalRatePerCBM:    Number(l.totalRatePerCBM) || 0,

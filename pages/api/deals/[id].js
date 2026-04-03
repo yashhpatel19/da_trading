@@ -61,12 +61,29 @@ export default async function handler(req, res) {
 
   if (req.method === 'PUT') {
     const data = req.body
-    if (!Array.isArray(data.products)) data.products = []
+
+    // Only pick editable fields — never let client overwrite computed/meta fields
+    const allowed = {
+      dealId:             data.dealId,
+      supplier:           data.supplier,
+      buyer:              data.buyer,
+      currency:           data.currency,
+      dealStatus:         data.dealStatus,
+      notes:              data.notes,
+      eta:                data.eta || null,
+      freeDays:           Number(data.freeDays) || 0,
+      topDueDate:         data.topDueDate || null,
+      supplierClaimShare: Number(data.supplierClaimShare) || 0,
+      myClaimShare:       Number(data.myClaimShare) || 0,
+      products:           Array.isArray(data.products) ? data.products : [],
+    }
 
     const deal = await Deal.findById(id)
     if (!deal) return res.status(404).json({ error: 'Deal not found' })
 
-    Object.assign(deal, data)
+    // Assign fields individually so Mongoose tracks changes properly
+    Object.keys(allowed).forEach(k => { deal[k] = allowed[k] })
+    deal.markModified('products')
     await deal.save()  // pre-save recalculates everything
 
     await recalcDealTotals(id)
