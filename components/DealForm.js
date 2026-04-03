@@ -121,7 +121,9 @@ export default function DealForm({ initialData = {}, mode = 'create' }) {
         router.push(`/deals/${initialData._id}`)
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Something went wrong')
+      const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Something went wrong'
+      setError(msg)
+      console.error('Deal save error:', err.response?.data || err)
       setSaving(false)
     }
   }
@@ -185,9 +187,9 @@ export default function DealForm({ initialData = {}, mode = 'create' }) {
         <div className="section-title mb-4">Timeline</div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="label">ETA of Shipment *</label>
+            <label className="label">ETA of Shipment</label>
             <input className="input" type="date" value={form.eta}
-              onChange={e => set('eta', e.target.value)} required />
+              onChange={e => set('eta', e.target.value)} />
             <div className="text-xs text-gray-500 mt-1">Invoice 1st due date = ETA</div>
           </div>
           <div>

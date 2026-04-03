@@ -84,7 +84,11 @@ export default async function handler(req, res) {
     // Assign fields individually so Mongoose tracks changes properly
     Object.keys(allowed).forEach(k => { deal[k] = allowed[k] })
     deal.markModified('products')
-    await deal.save()  // pre-save recalculates everything
+    try {
+      await deal.save()  // pre-save recalculates everything
+    } catch (validErr) {
+      return res.status(400).json({ error: validErr.message })
+    }
 
     await recalcDealTotals(id)
     const updated = await Deal.findById(id)
