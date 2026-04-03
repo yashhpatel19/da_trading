@@ -75,7 +75,7 @@ export default async function handler(req, res) {
       topDueDate:         data.topDueDate || null,
       supplierClaimShare: Number(data.supplierClaimShare) || 0,
       myClaimShare:       Number(data.myClaimShare) || 0,
-      products:           Array.isArray(data.products) ? data.products : [],
+      products:           Array.isArray(data.products) ? data.products.map(({ _id, ...p }) => p) : [],
     }
 
     const deal = await Deal.findById(id)
