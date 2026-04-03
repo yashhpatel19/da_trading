@@ -59,16 +59,36 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const data = req.body
-    if (!data.dealId) data.dealId = generateDealId()
+    try {
+      const data = req.body
+      if (!data.dealId) data.dealId = generateDealId()
+      if (!Array.isArray(data.products)) data.products = []
 
-    // Ensure products is an array
-    if (!Array.isArray(data.products)) data.products = []
+      // Only keep valid fields
+      const deal = new Deal({
+        dealId:             data.dealId,
+        supplier:           data.supplier,
+        buyer:              data.buyer,
+        currency:           data.currency || 'USD',
+        dealStatus:         data.dealStatus || 'Draft',
+        notes:              data.notes || '',
+        eta:                data.eta || null,
+        freeDays:           Number(data.freeDays) || 0,
+        topDueDate:         data.topDueDate || null,
+        supplierClaimShare: Number(data.supplierClaimShare) || 0,
+        myClaimShare:       Number(data.myClaimShare) || 0,
+        products:           data.products,
+      })
 
-    const deal = new Deal(data)
-    await deal.save()  // pre-save calculates all totals
-    const populated = await Deal.findById(deal._id).populate('buyer', 'name country').populate('supplier', 'name country')
-    return res.status(201).json(populated)
+      await deal.save()
+      const populated = await Deal.findById(deal._id)
+        .populate('buyer', 'name country')
+        .populate('supplier', 'name country')
+      return res.status(201).json(populated)
+    } catch (err) {
+      console.error('Deal create error:', err)
+      return res.status(400).json({ error: err.message })
+    }
   }
 
   res.status(405).json({ error: 'Method not allowed' })
