@@ -7,7 +7,7 @@ import { addDays } from 'date-fns'
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'INR', 'CNY']
 
 const emptyLine = () => ({
-  _id: Date.now() + Math.random(),
+  _key: Date.now() + Math.random(),
   category: '', size: '', grade: '', quantity: '',
   invoiceRatePerCBM: '', totalRatePerCBM: '', supplierRatePerCBM: '',
 })
@@ -39,7 +39,7 @@ export default function DealForm({ initialData = {}, mode = 'create' }) {
   })
   const [products, setProducts] = useState(
     initialData.products?.length
-      ? initialData.products.map(p => ({ ...p, _id: p._id || Date.now() + Math.random() }))
+      ? initialData.products.map(p => ({ ...p, _key: p._id || Date.now() + Math.random() }))
       : [emptyLine()]
   )
   const [parties, setParties] = useState([])
@@ -227,7 +227,7 @@ export default function DealForm({ initialData = {}, mode = 'create' }) {
             const calc    = calcLine(line)
             const cat     = getCat(line.category)
             return (
-              <div key={line._id} className="border border-dark-border rounded-lg p-4 relative">
+              <div key={line._key} className="border border-dark-border rounded-lg p-4 relative">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Line {idx + 1}</span>
                   {products.length > 1 && (

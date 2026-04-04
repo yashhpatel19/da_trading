@@ -16,7 +16,7 @@ const ProductLineSchema = new mongoose.Schema({
   invoiceAmount:      { type: Number, default: 0 },  // invoiceRatePerCBM * quantity
   topAmount:          { type: Number, default: 0 },  // topRatePerCBM * quantity
   supplierTotal:      { type: Number, default: 0 },  // supplierRatePerCBM * quantity
-}, { _id: true })
+}, { _id: false })
 
 const DealSchema = new mongoose.Schema({
   dealId:   { type: String, required: true, unique: true },
